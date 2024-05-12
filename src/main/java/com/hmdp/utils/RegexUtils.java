@@ -37,6 +37,7 @@ public class RegexUtils {
         if (StrUtil.isBlank(str)) {
             return true;
         }
+//        String匹配正则表达式，如果匹配则返回true,此处是，如果符合则返回false
         return !str.matches(regex);
     }
 }
