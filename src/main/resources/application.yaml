@@ -11,6 +11,7 @@ spring:
 #    password: 123456      #    旧电脑
   redis:
     host: 192.168.209.128   #    新电脑
+#    host: 192.168.206.132   #    旧电脑
     port: 6379
     lettuce:
       pool:
