@@ -1,5 +1,6 @@
 package com.hmdp.utils;
 
+import com.hmdp.dto.UserDTO;
 import org.springframework.web.servlet.HandlerInterceptor;
 
 import javax.servlet.http.HttpServletRequest;
@@ -15,19 +16,19 @@ public class LoginInterceptor implements HandlerInterceptor {
         Object user = session.getAttribute("user");
 //        3.判断用户是否存在
         if (user == null){
-            //        4.不存在，拦截
-
+            //        4.不存在，拦截,返回401状态码（未授权）
+            response.setStatus(401);
+            return false;
         }
-
-
 //        5.存在，保存用户到TreadLocal
-
+        UserHolder.saveUser((UserDTO) user);
 //        6.放行
-        return HandlerInterceptor.super.preHandle(request, response, handler);
+        return true;
     }
 
     @Override
     public void afterCompletion(HttpServletRequest request, HttpServletResponse response, Object handler, Exception ex) throws Exception {
-        HandlerInterceptor.super.afterCompletion(request, response, handler, ex);
+//        移除用户
+        UserHolder.removeUser();
     }
 }
