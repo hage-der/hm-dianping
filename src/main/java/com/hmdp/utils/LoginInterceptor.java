@@ -18,36 +18,17 @@ public class LoginInterceptor implements HandlerInterceptor {
 //    由于LoginInterceptor这个类是我们自己创建的，所以spring并不知道这个类
 //    所以使用Resource和Autowired无效,就需要我们自己创建构造器,同时在使用这个类的spring类中进行注入
 //    在MvcConfig中注入
-    @Resource
-    private StringRedisTemplate stringRedisTemplate;
-    public LoginInterceptor(StringRedisTemplate stringRedisTemplate) {
-        this.stringRedisTemplate = stringRedisTemplate;
-    }
-
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) throws Exception {
-//        1.获取 请求头中的token
-        String token = request.getHeader("authorization");
-        if (StrUtil.isBlank(token)) {
-            //不存在，拦截,返回401状态码（未授权）
+//        相对于之前的版本来说，RefreshTokenInterceptor已经将大部分的工作做完了，所以在这里只需要判断是否有登录状态即可
+//        即(TreadLocal)中是否有用户
+        if (UserHolder.getUser() == null){
+//            没有用户，拦截，并设置状态码
             response.setStatus(401);
+//             拦截
             return false;
         }
-//        2.基于token获取redis的用户
-        Map<Object, Object> userMap = stringRedisTemplate.opsForHash().entries(RedisConstants.LOGIN_USER_KEY + token);
-//        3.判断用户是否存在
-        if (userMap.isEmpty()){
-            //4.不存在，拦截,返回401状态码（未授权）
-            response.setStatus(401);
-            return false;
-        }
-//        5.将查询到的HashMap转换成UserDTO
-        UserDTO userDTO = BeanUtil.fillBeanWithMap(userMap, new UserDTO(), false);
-//        6.存在,将用户信息保存到TreadTool中
-        UserHolder.saveUser(userDTO);
-//        7.刷新token有效期
-        stringRedisTemplate.expire(RedisConstants.LOGIN_USER_KEY + token,RedisConstants.LOGIN_USER_TTL, TimeUnit.MINUTES);
-//        6.放行
+//        用户则放行
         return true;
     }
 
