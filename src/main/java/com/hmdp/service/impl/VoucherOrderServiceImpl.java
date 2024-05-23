@@ -9,6 +9,7 @@ import com.hmdp.service.IVoucherOrderService;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.hmdp.utils.RedisIdWorker;
 import com.hmdp.utils.UserHolder;
+import org.springframework.aop.framework.AopContext;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -32,7 +33,7 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
     @Resource
     private RedisIdWorker redisIdWorker;
     @Override
-    @Transactional
+
     public Result seckillVoucher(Long voucherId) {
 //        1. 查询优惠券
         SeckillVoucher voucher = seckillVoucherService.getById(voucherId);
@@ -49,27 +50,52 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
         if (voucher.getStock() < 1) {
             return Result.fail("库存不足!");
         }
-//        5.扣减库存
-        boolean success = seckillVoucherService.update()
-                .setSql("stock = stock - 1")  // set stock = stock - 1
-                .eq("voucher_id",voucherId).gt("stock",0) // where id = ? and stock > 0
-                .update();
-        if (!success){
-            return Result.fail("库存不足!");
-        }
-//        6.创建订单
-        VoucherOrder voucherOrder = new VoucherOrder();
-//        6.1 订单id
-        long orderId = redisIdWorker.nextId("order");
-        voucherOrder.setId(orderId);
-//        6.2 用户id
+
+//        添加悲观锁
+//        由于事务是方法执行完再执行，所以可能出现释放锁后数据库还没更新数据但是这时候一个线程来创建用户订单，这样会出现线程安全问题
+//        所以就需要在整个事务上加锁
         Long userId = UserHolder.getUser().getId();
-        voucherOrder.setUserId(userId);
+//        这里需要保证userid是同一个的加锁，但是toString每次都会new一个对象，所以需要加intern返回对象的规范引用，即去底层找userid值是否相同
+        synchronized(userId.toString().intern()) {
+//            由于@Transactional是spring来进行事务管理的，所以就需要使用spring可以管理的对象，而暂时创建的createVoucherOrde是没有被代理的
+//            所以需要拿到spring的代理对象,他的代理对象其实就是该类的接口类
+            IVoucherOrderService proxy = (IVoucherOrderService) AopContext.currentProxy();
+            return proxy.createVoucherOrder(voucherId);
+        }
+    }
+
+    @Transactional
+    public  Result createVoucherOrder(Long voucherId){
+        //        5.实现一人一单
+        Long userId = UserHolder.getUser().getId();
+
+//        5.1 查询订单
+            int count = query().eq("user_id", userId).eq("voucher_id", voucherId).count();
+//        5.2 判断是否存在用户已购买订单
+            if (count > 0){
+//            该用户已经购买
+                return Result.fail("已购买，无法重复购买!");
+            }
+//        6.扣减库存
+            boolean success = seckillVoucherService.update()
+                    .setSql("stock = stock - 1")  // set stock = stock - 1
+                    .eq("voucher_id",voucherId).gt("stock",0) // where id = ? and stock > 0
+                    .update();
+            if (!success){
+                return Result.fail("库存不足!");
+            }
+//        6.创建订单
+            VoucherOrder voucherOrder = new VoucherOrder();
+//        6.1 订单id
+            long orderId = redisIdWorker.nextId("order");
+            voucherOrder.setId(orderId);
+//        6.2 用户id
+            voucherOrder.setUserId(userId);
 //        6.3 代金券id
-        voucherOrder.setVoucherId(voucherId);
+            voucherOrder.setVoucherId(voucherId);
 //        保存订单
-        save(voucherOrder);
-//        7.返回订单id
-        return Result.ok(orderId);
+            save(voucherOrder);
+            //        7.返回订单id
+            return createVoucherOrder(orderId);
     }
 }

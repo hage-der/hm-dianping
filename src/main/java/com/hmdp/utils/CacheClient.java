@@ -71,7 +71,6 @@ public class CacheClient {
         return r;
     }
 
-
     //    逻辑过期解决缓存击穿
     public <R,ID> R queryWithLogicalExpire(
             String keyPrefix,ID id,Class<R> type,Function<ID,R> dbFallback, Long time, TimeUnit unit){
