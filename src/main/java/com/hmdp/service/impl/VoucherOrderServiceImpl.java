@@ -8,8 +8,10 @@ import com.hmdp.service.ISeckillVoucherService;
 import com.hmdp.service.IVoucherOrderService;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.hmdp.utils.RedisIdWorker;
+import com.hmdp.utils.SimpleRedisLock;
 import com.hmdp.utils.UserHolder;
 import org.springframework.aop.framework.AopContext;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -32,8 +34,10 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
 
     @Resource
     private RedisIdWorker redisIdWorker;
-    @Override
 
+    @Resource
+    private StringRedisTemplate stringRedisTemplate;
+    @Override
     public Result seckillVoucher(Long voucherId) {
 //        1. 查询优惠券
         SeckillVoucher voucher = seckillVoucherService.getById(voucherId);
@@ -56,12 +60,27 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
 //        所以就需要在整个事务上加锁
         Long userId = UserHolder.getUser().getId();
 //        这里需要保证userid是同一个的加锁，但是toString每次都会new一个对象，所以需要加intern返回对象的规范引用，即去底层找userid值是否相同
-        synchronized(userId.toString().intern()) {
-//            由于@Transactional是spring来进行事务管理的，所以就需要使用spring可以管理的对象，而暂时创建的createVoucherOrde是没有被代理的
+
+//        创建锁对象
+        SimpleRedisLock lock = new SimpleRedisLock("order:" + userId, stringRedisTemplate);
+//        获取锁
+        boolean isLock = lock.tryLock(5L);
+//        判断尝试获取锁成功
+        if (isLock){
+//            获取锁失败，返回错误或重试
+            return Result.fail("不允许重复下单!");
+        }
+        try{
+            //            由于@Transactional是spring来进行事务管理的，所以就需要使用spring可以管理的对象，而暂时创建的createVoucherOrde是没有被代理的
 //            所以需要拿到spring的代理对象,他的代理对象其实就是该类的接口类
             IVoucherOrderService proxy = (IVoucherOrderService) AopContext.currentProxy();
             return proxy.createVoucherOrder(voucherId);
+        }finally {
+//            释放锁
+            lock.unLock();
         }
+
+
     }
 
     @Transactional
